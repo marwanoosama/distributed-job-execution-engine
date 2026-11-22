@@ -1,0 +1,15 @@
+meta {
+  name: Get Job
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/jobs/{{jobId}}
+  auth: none
+}
+
+tests {
+  expect(res.status).to.eql(200);
+  expect(res.body).to.have.property('jobId');
+}

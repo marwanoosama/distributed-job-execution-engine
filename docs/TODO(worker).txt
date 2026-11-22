@@ -1,0 +1,13 @@
+# What the worker should do?: 
+    1. take the job id from the queue
+    2. get a lease (which is a lock with an expiry)
+    3. set the status to running
+    4. find the handler by the job type and run it with ct
+    5. while its running, renew lease every 10 secs
+    6. finish (completed or retrying/dead)
+
+
+# Things to put in mind:
+    1. Concurrency: if Concurrency = 5, the worker runs 5 consume loops in the same process.
+    2. two jobs must not take the same job (for update skip locked)
+

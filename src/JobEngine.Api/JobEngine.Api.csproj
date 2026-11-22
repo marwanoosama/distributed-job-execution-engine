@@ -17,6 +17,7 @@
   <ItemGroup>
     <ProjectReference Include="..\JobEngine.Application\JobEngine.Application.csproj" />
     <ProjectReference Include="..\JobEngine.Infrastructure\JobEngine.Infrastructure.csproj" />
+    <ProjectReference Include="..\JobEngine.SampleJobs\JobEngine.SampleJobs.csproj" />
   </ItemGroup>
 
 </Project>

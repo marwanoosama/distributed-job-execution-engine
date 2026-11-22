@@ -1,6 +1,4 @@
-using JobEngine.Domain.models;
-
-namespace JobEngine.Domain;
+namespace JobEngine.Domain.models;
 
 public class Job
 {

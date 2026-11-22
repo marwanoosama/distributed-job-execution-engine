@@ -1,11 +1,15 @@
+using JobEngine.Api.endpoints;
+using JobEngine.Application.services.job;
+using JobEngine.Infrastructure;
 using JobEngine.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddDbContext<JobDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres"))
-           .UseSnakeCaseNamingConvention());
+builder.Services.AddJobEnginePersistence(builder.Configuration.GetConnectionString("Postgres")!);
+
+builder.Services.AddScoped<JobService>();
+
 
 var app = builder.Build();
 
@@ -15,6 +19,6 @@ using (var scope = app.Services.CreateScope())
     db.Database.Migrate();
 }
 
-app.MapGet("/", () => "JobEngine API (Phase 0)");
+app.MapJobEndpoints();
 
 app.Run();

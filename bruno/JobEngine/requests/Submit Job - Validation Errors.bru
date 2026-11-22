@@ -1,0 +1,27 @@
+meta {
+  name: Submit Job - Validation Errors
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/jobs
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "type": "Sleep",
+    "payload": {
+      "seconds": 1
+    },
+    "priority": 7,
+    "maxAttempts": 0
+  }
+}
+
+tests {
+  expect(res.status).to.eql(400);
+  expect(res.body.errors).to.be.an('array').that.is.not.empty;
+}

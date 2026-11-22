@@ -1,0 +1,15 @@
+meta {
+  name: Get Job - Not Found
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/api/jobs/00000000-0000-0000-0000-000000000000
+  auth: none
+}
+
+tests {
+  expect(res.status).to.eql(404);
+  expect(res.body.error).to.eql('job not found');
+}

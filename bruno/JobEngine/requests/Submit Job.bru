@@ -1,0 +1,35 @@
+meta {
+  name: Submit Job
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/jobs
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "type": "Sleep",
+    "payload": {
+      "seconds": 2
+    },
+    "priority": 1,
+    "maxAttempts": 3
+  }
+}
+
+script:post-response {
+  // chain: store jobId so "Get Job" can use {{jobId}}
+  const { jobId } = res.body;
+  if (jobId) {
+    bru.setEnvVar('jobId', jobId);
+  }
+}
+
+tests {
+  expect(res.status).to.eql(202);
+  expect(res.body).to.have.property('jobId');
+}

@@ -1,10 +1,11 @@
+using JobEngine.Application.interfaces;
 using JobEngine.Domain;
 using JobEngine.Domain.models;
 using Microsoft.EntityFrameworkCore;
 
 namespace JobEngine.Infrastructure.Persistence;
 
-public class JobDbContext(DbContextOptions<JobDbContext> options) : DbContext(options)
+public class JobDbContext(DbContextOptions<JobDbContext> options) : DbContext(options), IJobDbContext
 {
     public DbSet<Job> Jobs => Set<Job>();
     public DbSet<Worker> Workers => Set<Worker>();
