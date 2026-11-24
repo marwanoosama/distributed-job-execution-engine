@@ -9,5 +9,6 @@
 
 # Things to put in mind:
     1. Concurrency: if Concurrency = 5, the worker runs 5 consume loops in the same process.
-    2. two jobs must not take the same job (for update skip locked)
+    2. two jobs must not take the same job (for update skip locked).
+    3. use semaphore
 

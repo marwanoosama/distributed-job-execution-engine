@@ -2,11 +2,12 @@ using JobEngine.Application.interfaces;
 using JobEngine.Application.records.job;
 using JobEngine.Domain.models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using System.Text.Json;
 
 namespace JobEngine.Application.services.job;
 
-public class JobService(IJobDbContext dbContext)
+public class JobService(IJobDbContext dbContext, IJobQueue queue, ILogger<JobService> logger)
 {
     public async Task<Job> CreateJob(SubmitJobRequest req, CancellationToken ct = default)
     {
@@ -25,7 +26,16 @@ public class JobService(IJobDbContext dbContext)
         
         dbContext.Jobs.Add(job);
         await dbContext.SaveChangesAsync(ct);
-        
+
+        try
+        {
+            await queue.EnqueueAsync(job.Id, job.Priority);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Job {JobId} saved to Postgres but could not be enqueued in Redis; Reconciler will pick it up", job.Id);
+        }
+
         return job;
     }
 

@@ -6,10 +6,10 @@ using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddJobEnginePersistence(builder.Configuration.GetConnectionString("Postgres")!);
+builder.Services.AddJobEnginePersistence(builder.Configuration.GetConnectionString("Postgres")!,
+    builder.Configuration.GetConnectionString("Redis")!);
 
 builder.Services.AddScoped<JobService>();
-
 
 var app = builder.Build();
 
