@@ -1,3 +1,4 @@
+using JobEngine.Application;
 using JobEngine.Infrastructure;
 using JobEngine.Scheduler;
 
@@ -8,6 +9,10 @@ builder.Services.AddJobEnginePersistence(builder.Configuration.GetConnectionStri
 
 builder.Services.AddHostedService<DelayedJobMover>();
 builder.Services.AddHostedService<Reconciler>();
+
+
+builder.Services.AddRetryPolicy(builder.Configuration); 
+builder.Services.AddHostedService<CrashMonitor>();
 
 var host = builder.Build();
 host.Run();

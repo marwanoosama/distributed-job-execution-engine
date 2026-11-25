@@ -22,6 +22,7 @@ public static class DependencyInjection
             return ConnectionMultiplexer.Connect(options);
         });
         services.AddSingleton<IJobQueue, RedisJobQueue>();
+        services.AddSingleton<ILeaseManager, RedisLeaseManager>();
         return services;
     }
 }

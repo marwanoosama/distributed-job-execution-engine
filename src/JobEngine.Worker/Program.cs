@@ -3,6 +3,7 @@ using JobEngine.Application.interfaces;
 using JobEngine.Infrastructure;
 using JobEngine.SampleJobs.handlers;
 using JobEngine.Worker;
+using WorkerEntity = JobEngine.Domain.models.Worker;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -10,6 +11,10 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Services.Configure<HostOptions>(o =>
     o.ShutdownTimeout = TimeSpan.FromSeconds(builder.Configuration.GetValue("Worker:ShutdownTimeoutSeconds", 30)));
 
+// one worker identity for the whole process, shared by WorkerService and WorkerHeartbeatService
+builder.Services.AddSingleton(new WorkerEntity { Hostname = Environment.MachineName });
+
+builder.Services.AddHostedService<WorkerHeartbeatService>();
 builder.Services.AddHostedService<WorkerService>();
 
 builder.Services.AddRetryPolicy(builder.Configuration);

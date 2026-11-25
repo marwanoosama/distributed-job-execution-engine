@@ -4,22 +4,57 @@ using JobEngine.Application.services.job;
 using JobEngine.Application.services.retry;
 using JobEngine.Domain.models;
 using Microsoft.EntityFrameworkCore;
+using WorkerEntity = JobEngine.Domain.models.Worker;
 
 namespace JobEngine.Worker;
 
-public class WorkerService(IServiceScopeFactory scopes, ILogger<WorkerService> logger, IConfiguration config, IJobQueue queue, RetryPolicy retryPolicy) : BackgroundService
+public class WorkerService(IServiceScopeFactory scopes, ILogger<WorkerService> logger, IConfiguration config,
+    IJobQueue queue, RetryPolicy retryPolicy, ILeaseManager leaseManager, WorkerEntity me) : BackgroundService
 {
-    private readonly string _workerId = Guid.NewGuid().ToString();
+    private string WorkerKey => me.Id.ToString();
+    private TimeSpan LeaseTtl => TimeSpan.FromSeconds(config.GetValue("Worker:LeaseSeconds", 30));
     
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var concurrency = config.GetValue("Worker:Concurrency", 3);
-        logger.LogInformation("Worker host up with {Concurrency} consume loops.", concurrency);
+        // save the current worker in db
+        await RegisterWorkerAsync(concurrency);
+        logger.LogInformation("Worker {Id} (pid {Pid}) up with {Concurrency} consume loops.", me.Id, Environment.ProcessId, concurrency);
 
         var loops = Enumerable.Range(0, concurrency).Select(i => LoopAsync(i, stoppingToken));
         await Task.WhenAll(loops);
 
+        await MarkStoppedAsync();
         logger.LogInformation("Worker host stopping.");
+    }
+    
+    private async Task RegisterWorkerAsync(int concurrency)
+    {
+        await using var scope = scopes.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<IJobDbContext>();
+        var now = DateTimeOffset.UtcNow;
+        db.Workers.Add(new WorkerEntity
+        {
+            Id = me.Id,
+            Hostname = me.Hostname,
+            Concurrency = concurrency,
+            Status = WorkerStatus.Alive,
+            StartedAt = now,
+            LastHeartbeat = now
+        });
+        await db.SaveChangesAsync(CancellationToken.None);
+    }
+    
+    private async Task MarkStoppedAsync()
+    {
+        try
+        {
+            await using var scope = scopes.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<IJobDbContext>();
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"UPDATE workers SET status = 'Stopped' WHERE id = {me.Id}", CancellationToken.None);
+        }
+        catch (Exception ex) { logger.LogWarning(ex, "Could not mark worker as stopped"); }
     }
     
     private async Task LoopAsync(int loopId, CancellationToken stop)
@@ -28,21 +63,31 @@ public class WorkerService(IServiceScopeFactory scopes, ILogger<WorkerService> l
         {
             try
             {
-                var jobId = await queue.DequeueAsync(_workerId, stop);
+                var jobId = await queue.DequeueAsync(WorkerKey, stop);
                 if (jobId is null) continue;
+                
+                // try to acquire a lease, if there is already a lease cached, that means the job is being processed by another worker so continue with the next one
+                var leaseToken = Guid.NewGuid();
+                if (!await leaseManager.TryAcquireAsync(jobId.Value, leaseToken, LeaseTtl))
+                {
+                    await queue.AcknowledgeAsync(WorkerKey, jobId.Value);  
+                    continue;
+                }
                 
                 // one dbcontext per job
                 await using var scope = scopes.CreateAsyncScope();
                 var db = scope.ServiceProvider.GetRequiredService<IJobDbContext>();
 
-                var job = await ClaimAsync(db, jobId.Value, CancellationToken.None);
+                // take the job
+                var job = await ClaimAsync(db, jobId.Value, leaseToken, CancellationToken.None);
                 if (job is null)
                 {
-                    await queue.AcknowledgeAsync(_workerId, jobId.Value);
+                    await leaseManager.ReleaseAsync(jobId.Value, leaseToken);
+                    await queue.AcknowledgeAsync(WorkerKey, jobId.Value);
                     continue;
                 }
 
-                await RunAsync(job, scope.ServiceProvider, db, loopId, stop);
+                await RunAsync(job, leaseToken, scope.ServiceProvider, db, loopId);
             }
             catch (OperationCanceledException) when (stop.IsCancellationRequested)
             {
@@ -56,24 +101,25 @@ public class WorkerService(IServiceScopeFactory scopes, ILogger<WorkerService> l
         }
     }
 
-    private static async Task<Job?> ClaimAsync(IJobDbContext db, Guid jobId, CancellationToken ct)
+    private static async Task<Job?> ClaimAsync(IJobDbContext db, Guid jobId, Guid leaseToken, CancellationToken ct)
     {
         var jobs = await db.Jobs.FromSqlInterpolated($@"
             UPDATE jobs
-            SET status = 'Running', attempt_count = attempt_count + 1, lease_token = gen_random_uuid()
+            SET status = 'Running', attempt_count = attempt_count + 1, lease_token = {leaseToken}
             WHERE id = {jobId} AND status IN ('Pending', 'Scheduled', 'Retrying')
             RETURNING *").AsNoTracking().ToListAsync(ct);
 
         return jobs.FirstOrDefault();
     }
     
-    private async Task RunAsync(Job job, IServiceProvider sp, IJobDbContext db, int loopId, CancellationToken stop)
+    private async Task RunAsync(Job job, Guid leaseToken, IServiceProvider sp, IJobDbContext db, int loopId)
     {
         logger.LogInformation("[Loop {Loop}] Job {Id} ({Type}) started, attempt {Attempt}", loopId, job.Id, job.Type, job.AttemptCount);
 
         var attempt = new JobAttempt
         {
             JobId = job.Id,
+            WorkerId = me.Id,
             AttemptNumber = job.AttemptCount,
             StartedAt = DateTimeOffset.UtcNow
         };
@@ -85,6 +131,12 @@ public class WorkerService(IServiceScopeFactory scopes, ILogger<WorkerService> l
         // so shutdown waits for the current running jobs to finish
         var timeout = TimeSpan.FromSeconds(config.GetValue("Worker:JobTimeoutSeconds", 600));
         using var jobCts = new CancellationTokenSource(timeout);
+
+        var leaseLost = false;
+        using var renewCts = new CancellationTokenSource();
+        
+        // keep the lease alive while the job runs. if the lease is lost, stop renewing the lease key
+        var renewTask = RenewLeaseLoopAsync(job.Id, leaseToken, () => { leaseLost = true; jobCts.Cancel(); }, renewCts.Token);
         
         string? error = null;
         bool nonRetryable = false;
@@ -96,7 +148,7 @@ public class WorkerService(IServiceScopeFactory scopes, ILogger<WorkerService> l
         }
         catch (OperationCanceledException) when (jobCts.IsCancellationRequested)
         {
-            error = $"Job timed out after {timeout.TotalSeconds:0}s";
+            error = leaseLost ? "Lost the lease" : $"Job timed out after {timeout.TotalSeconds:0}s";
         }
         catch (Exception ex)
         {
@@ -104,10 +156,20 @@ public class WorkerService(IServiceScopeFactory scopes, ILogger<WorkerService> l
             nonRetryable = ex is NonRetryableException;
         }
         
-        attempt.FinishedAt = DateTimeOffset.UtcNow;
-        attempt.Result = error is null ? JobAttemptResult.Success : JobAttemptResult.Failed;
-        attempt.Error = error;
-        await db.SaveChangesAsync(CancellationToken.None);
+        renewCts.Cancel();
+        await renewTask;
+        
+        if (leaseLost)
+        {
+            logger.LogWarning("Job {Id}: lease lost, result discarded", job.Id);
+            await queue.AcknowledgeAsync(WorkerKey, job.Id);
+            return;
+        }
+        
+        var attemptResult = error is null ? "Success" : "Failed";
+        await db.Database.ExecuteSqlInterpolatedAsync($@"
+            UPDATE job_attempts SET finished_at = now(), result = {attemptResult}, error = {error}
+            WHERE id = {attempt.Id} AND finished_at IS NULL", CancellationToken.None);
 
         string outcome;
         int rows;
@@ -154,7 +216,35 @@ public class WorkerService(IServiceScopeFactory scopes, ILogger<WorkerService> l
         else
             logger.LogInformation("[Loop {Loop}] Job {Id} finished: {Outcome}", loopId, job.Id, outcome);
 
-        await queue.AcknowledgeAsync(_workerId, job.Id);
+        // release the lease only after the job status is saved
+        await leaseManager.ReleaseAsync(job.Id, leaseToken);
+        await queue.AcknowledgeAsync(WorkerKey, job.Id);
+    }
+
+    // renews the lease every few seconds while the job runs. calls onLost() if the lease is no longer mine
+    private async Task RenewLeaseLoopAsync(Guid jobId, Guid leaseToken, Action onLost, CancellationToken stop)
+    {
+        var every = TimeSpan.FromSeconds(config.GetValue("Worker:LeaseRenewSeconds", 10));
+        using var timer = new PeriodicTimer(every);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(stop))
+            {
+                try
+                {
+                    if (await leaseManager.RenewAsync(jobId, leaseToken, LeaseTtl)) continue;
+
+                    logger.LogWarning("Job {Id}: lease lost", jobId);
+                    onLost();
+                    return;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    logger.LogWarning(ex, "Job {Id}: lease renew failed, will try again", jobId);
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
     }
 
     
