@@ -1,5 +1,4 @@
 using JobEngine.Api.endpoints;
-using JobEngine.Application;
 using JobEngine.Application.services.job;
 using JobEngine.Infrastructure;
 using JobEngine.Infrastructure.Persistence;
@@ -9,8 +8,6 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddJobEnginePersistence(builder.Configuration.GetConnectionString("Postgres")!,
     builder.Configuration.GetConnectionString("Redis")!);
-
-builder.Services.AddRetryPolicy(builder.Configuration);
 
 builder.Services.AddScoped<JobService>();
 

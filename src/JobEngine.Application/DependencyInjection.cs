@@ -8,8 +8,8 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddRetryPolicy(this IServiceCollection services, IConfiguration configuration)
     {
-        var options = configuration.GetSection(RetryPolicyOptions.SectionName).Get<RetryPolicyOptions>() ?? new RetryPolicyOptions();
-        RetryPolicy.Configure(options);
+        services.Configure<RetryPolicyOptions>(configuration.GetSection(RetryPolicyOptions.SectionName));
+        services.AddSingleton<RetryPolicy>();
         return services;
     }
 }

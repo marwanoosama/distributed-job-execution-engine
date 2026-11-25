@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace JobEngine.Worker;
 
-public class WorkerService(IServiceScopeFactory scopes, ILogger<WorkerService> logger, IConfiguration config, IJobQueue queue) : BackgroundService
+public class WorkerService(IServiceScopeFactory scopes, ILogger<WorkerService> logger, IConfiguration config, IJobQueue queue, RetryPolicy retryPolicy) : BackgroundService
 {
     private readonly string _workerId = Guid.NewGuid().ToString();
     
@@ -115,7 +115,7 @@ public class WorkerService(IServiceScopeFactory scopes, ILogger<WorkerService> l
         else if (job.AttemptCount < job.MaxAttempts)
         {
             outcome = "Retrying";
-            var nextRunAt = DateTimeOffset.UtcNow + RetryPolicy.GetDelay(job.AttemptCount);
+            var nextRunAt = DateTimeOffset.UtcNow + retryPolicy.GetDelay(job.AttemptCount);
 
             rows = await db.Database.ExecuteSqlInterpolatedAsync($@"
             UPDATE jobs SET status = 'Retrying', last_error = {error}, run_at = {nextRunAt}
