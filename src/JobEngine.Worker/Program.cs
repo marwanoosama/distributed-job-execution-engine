@@ -6,6 +6,10 @@ using JobEngine.Worker;
 
 var builder = Host.CreateApplicationBuilder(args);
 
+// after shutdown, wait at most "ShutdownTimeoutSeconds" seconds
+builder.Services.Configure<HostOptions>(o =>
+    o.ShutdownTimeout = TimeSpan.FromSeconds(builder.Configuration.GetValue("Worker:ShutdownTimeoutSeconds", 30)));
+
 builder.Services.AddHostedService<WorkerService>();
 
 builder.Services.AddRetryPolicy(builder.Configuration);

@@ -27,5 +27,8 @@ public static class JobEndpoints
         
         app.MapPost("/api/jobs/{id:guid}/retry", async (Guid id, JobService jobService, CancellationToken ct) =>
             await jobService.RetryJob(id, ct) ? Results.Accepted($"/api/jobs/{id}") : Results.Conflict(new { error = "job not found or not Dead" }));
+        
+        app.MapPost("/api/jobs/{id:guid}/cancel", async (Guid id, JobService jobService, CancellationToken ct) =>
+            await jobService.CancelJob(id, ct) ? Results.Ok(new { status = "Cancelled" }) : Results.Conflict(new { error = "job not found, already running, or finished" }));
     }
 }

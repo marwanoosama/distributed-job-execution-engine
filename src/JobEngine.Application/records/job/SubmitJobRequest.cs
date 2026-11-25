@@ -2,7 +2,12 @@ using System.Text.Json;
 
 namespace JobEngine.Application.records.job;
 
-public record SubmitJobRequest(string Type, JsonElement Payload, int Priority = 1, int? MaxAttempts = null, string? IdempotencyKey = null)
+public record SubmitJobRequest(string Type,
+    JsonElement Payload,
+    int Priority = 1,
+    int? MaxAttempts = null,
+    string? IdempotencyKey = null,
+    DateTimeOffset? RunAt = null)
 {
     public IReadOnlyList<string> Validate()
     {
@@ -21,6 +26,9 @@ public record SubmitJobRequest(string Type, JsonElement Payload, int Priority = 
         
         if (IdempotencyKey is { Length: > 200 })
             errors.Add("idempotencyKey must be at most 200 characters");
+        
+        if (RunAt is not null && RunAt > DateTimeOffset.UtcNow.AddYears(1))
+            errors.Add("runAt must be within one year");
 
         return errors;
     }

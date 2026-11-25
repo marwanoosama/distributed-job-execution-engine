@@ -13,7 +13,8 @@ public record JobResponse(
     int MaxAttempts,
     string? LastError,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? CompletedAt)
+    DateTimeOffset? CompletedAt,
+    DateTimeOffset RunAt)
 {
     public static JobResponse From(Job job) => new(
         job.Id,
@@ -25,7 +26,8 @@ public record JobResponse(
         job.MaxAttempts,
         job.LastError,
         job.CreatedAt,
-        job.CompletedAt);
+        job.CompletedAt,
+        job.RunAt);
 
     static JsonElement ParsePayload(string payload)
     {

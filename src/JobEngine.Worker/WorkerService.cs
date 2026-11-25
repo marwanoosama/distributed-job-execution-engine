@@ -35,7 +35,7 @@ public class WorkerService(IServiceScopeFactory scopes, ILogger<WorkerService> l
                 await using var scope = scopes.CreateAsyncScope();
                 var db = scope.ServiceProvider.GetRequiredService<IJobDbContext>();
 
-                var job = await ClaimAsync(db, jobId.Value, stop);
+                var job = await ClaimAsync(db, jobId.Value, CancellationToken.None);
                 if (job is null)
                 {
                     await queue.AcknowledgeAsync(_workerId, jobId.Value);
@@ -81,18 +81,22 @@ public class WorkerService(IServiceScopeFactory scopes, ILogger<WorkerService> l
         db.JobAttempts.Add(attempt);
         await db.SaveChangesAsync(CancellationToken.None);
         
+        // create a new ct which makes the cancellation only by the timeout
+        // so shutdown waits for the current running jobs to finish
+        var timeout = TimeSpan.FromSeconds(config.GetValue("Worker:JobTimeoutSeconds", 600));
+        using var jobCts = new CancellationTokenSource(timeout);
+        
         string? error = null;
         bool nonRetryable = false;
         try
         {
             var handler = sp.GetServices<IJobHandler>().FirstOrDefault(h => h.JobType == job.Type) ?? throw new NonRetryableException($"No handler for job type '{job.Type}'");
 
-            await handler.HandleAsync(new JobContext(job.Id, job.Payload, job.AttemptCount), stop);
+            await handler.HandleAsync(new JobContext(job.Id, job.Payload, job.AttemptCount), jobCts.Token);
         }
-        catch (OperationCanceledException) when (stop.IsCancellationRequested)
+        catch (OperationCanceledException) when (jobCts.IsCancellationRequested)
         {
-            logger.LogWarning("Job {Id} interrupted by shutdown", job.Id);
-            return;
+            error = $"Job timed out after {timeout.TotalSeconds:0}s";
         }
         catch (Exception ex)
         {

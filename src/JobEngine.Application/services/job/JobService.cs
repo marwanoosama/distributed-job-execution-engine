@@ -19,6 +19,10 @@ public class JobService(IJobDbContext dbContext, IJobQueue queue, ILogger<JobSer
             if (existing is not null) return existing;   
         }
         
+        var now = DateTimeOffset.UtcNow;
+        var runAt = req.RunAt?.ToUniversalTime() ?? now; 
+        var isFuture = runAt > now.AddSeconds(1);          
+        
         var job = new Job
         {
             Id = Guid.NewGuid(),
@@ -28,8 +32,8 @@ public class JobService(IJobDbContext dbContext, IJobQueue queue, ILogger<JobSer
                 : req.Payload.GetRawText(),
             Priority = req.Priority,
             MaxAttempts = req.MaxAttempts ?? 5,
-            Status = JobStatus.Pending,
-            RunAt = DateTimeOffset.UtcNow,
+            Status = isFuture ? JobStatus.Scheduled : JobStatus.Pending,
+            RunAt = isFuture ? runAt : now,
             IdempotencyKey = idempotencyKey
         };
 
@@ -48,11 +52,12 @@ public class JobService(IJobDbContext dbContext, IJobQueue queue, ILogger<JobSer
 
         try
         {
-            await queue.EnqueueAsync(job.Id, job.Priority);
+            if (isFuture) await queue.ScheduleAsync(job.Id, job.Priority, runAt);
+            else await queue.EnqueueAsync(job.Id, job.Priority);
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Job {JobId} saved to Postgres but could not be enqueued in Redis; Reconciler will pick it up", job.Id);
+            logger.LogWarning(ex, "Job {JobId} saved to Postgres but could not be queued in Redis; Reconciler will pick it up", job.Id);
         }
 
         return job;
@@ -77,5 +82,13 @@ public class JobService(IJobDbContext dbContext, IJobQueue queue, ILogger<JobSer
         await queue.RemoveFromDeadLetterAsync(id);
         await queue.EnqueueAsync(id, job!.Priority);
         return true;
+    }
+    
+    public async Task<bool> CancelJob(Guid id, CancellationToken ct = default)
+    {
+        var rows = await dbContext.Database.ExecuteSqlInterpolatedAsync($@"
+        UPDATE jobs SET status = 'Cancelled'
+        WHERE id = {id} AND status IN ('Pending', 'Scheduled', 'Retrying')", ct);
+        return rows == 1;
     }
 }
