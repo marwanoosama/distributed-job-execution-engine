@@ -1,5 +1,6 @@
 using JobEngine.Application.interfaces;
 using JobEngine.Application.records.job;
+using JobEngine.Application.services.job;
 using JobEngine.Application.services.retry;
 using JobEngine.Domain.models;
 using Microsoft.EntityFrameworkCore;
@@ -81,9 +82,10 @@ public class WorkerService(IServiceScopeFactory scopes, ILogger<WorkerService> l
         await db.SaveChangesAsync(CancellationToken.None);
         
         string? error = null;
+        bool nonRetryable = false;
         try
         {
-            var handler = sp.GetServices<IJobHandler>().FirstOrDefault(h => h.JobType == job.Type) ?? throw new InvalidOperationException($"No handler for job type '{job.Type}'");
+            var handler = sp.GetServices<IJobHandler>().FirstOrDefault(h => h.JobType == job.Type) ?? throw new NonRetryableException($"No handler for job type '{job.Type}'");
 
             await handler.HandleAsync(new JobContext(job.Id, job.Payload, job.AttemptCount), stop);
         }
@@ -95,6 +97,7 @@ public class WorkerService(IServiceScopeFactory scopes, ILogger<WorkerService> l
         catch (Exception ex)
         {
             error = ex.Message.Length > 4000 ? ex.Message[..4000] : ex.Message;
+            nonRetryable = ex is NonRetryableException;
         }
         
         attempt.FinishedAt = DateTimeOffset.UtcNow;
@@ -112,7 +115,7 @@ public class WorkerService(IServiceScopeFactory scopes, ILogger<WorkerService> l
             UPDATE jobs SET status = 'Completed', completed_at = now()
             WHERE id = {job.Id} AND lease_token = {job.LeaseToken} AND status = 'Running'", CancellationToken.None);
         }
-        else if (job.AttemptCount < job.MaxAttempts)
+        else if (!nonRetryable && job.AttemptCount < job.MaxAttempts)
         {
             outcome = "Retrying";
             var nextRunAt = DateTimeOffset.UtcNow + retryPolicy.GetDelay(job.AttemptCount);
