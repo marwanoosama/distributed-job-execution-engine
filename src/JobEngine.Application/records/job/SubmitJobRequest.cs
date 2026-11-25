@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace JobEngine.Application.records.job;
 
-public record SubmitJobRequest(string Type, JsonElement Payload, int Priority = 1, int? MaxAttempts = null)
+public record SubmitJobRequest(string Type, JsonElement Payload, int Priority = 1, int? MaxAttempts = null, string? IdempotencyKey = null)
 {
     public IReadOnlyList<string> Validate()
     {
@@ -18,6 +18,9 @@ public record SubmitJobRequest(string Type, JsonElement Payload, int Priority = 
 
         if (MaxAttempts is < 1 or > 100)
             errors.Add("maxAttempts must be between 1 and 100");
+        
+        if (IdempotencyKey is { Length: > 200 })
+            errors.Add("idempotencyKey must be at most 200 characters");
 
         return errors;
     }

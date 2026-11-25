@@ -21,4 +21,8 @@
     <ProjectReference Include="..\JobEngine.Domain\JobEngine.Domain.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="options\" />
+  </ItemGroup>
+
 </Project>

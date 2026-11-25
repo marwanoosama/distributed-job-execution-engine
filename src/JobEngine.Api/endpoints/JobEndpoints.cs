@@ -24,5 +24,8 @@ public static class JobEndpoints
                 ? Results.NotFound(new { error = "job not found" })
                 : Results.Ok(JobResponse.From(res));
         });
+        
+        app.MapPost("/api/jobs/{id:guid}/retry", async (Guid id, JobService jobService, CancellationToken ct) =>
+            await jobService.RetryJob(id, ct) ? Results.Accepted($"/api/jobs/{id}") : Results.Conflict(new { error = "job not found or not Dead" }));
     }
 }

@@ -20,7 +20,7 @@ public class Reconciler(IServiceScopeFactory scopes, ILogger<Reconciler> log) : 
 
                 var cutoff = DateTimeOffset.UtcNow.AddSeconds(-60);
                 var stuck = await db.Jobs.AsNoTracking()
-                    .Where(j => j.Status == JobStatus.Pending && j.RunAt <= cutoff)
+                    .Where(j => (j.Status == JobStatus.Pending || j.Status == JobStatus.Retrying) && j.RunAt <= cutoff)
                     .OrderBy(j => j.RunAt)
                     .Select(j => new { j.Id, j.Priority })
                     .Take(500).ToListAsync(stop);
