@@ -229,17 +229,6 @@ A `Running` job orphaned by a crash is recovered by the first CrashMonitor pass 
 ### 15. Non-retryable
 Submit a job type with no registered handler → `Dead` on attempt 1 with "No handler for job type '...'", no retries.
 
-## Design decisions
-
-| Decision | Rationale |
-|---|---|
-| Postgres is the source of truth, Redis is rebuildable | Redis losing data is an inconvenience; Postgres losing data is a disaster. Job state is written to Postgres first. |
-| CAS status updates (`WHERE status = ... AND lease_token = ...`) | Two workers (or a dead worker's ghost request) can't both transition a job. The loser updates 0 rows and backs off. |
-| Redis leases with TTL instead of DB-only locks | Auto-expiry means a dead worker's locks clean themselves up. Lua compare-and-swap makes renew/release owner-only. |
-| Jitter in retries | Without it, simultaneous failures retry in lockstep and overload the system that just recovered. |
-| `NonRetryableException` as a type | Handlers declare permanence by throwing; the engine owns the retry policy. |
-| Separate Scheduler process | The API stays stateless; monitoring loops run at their own cadence and scale independently. |
-| Polling dashboard, not websockets | 5s freshness is enough for an ops view; no connection state to manage. |
 
 ## Project structure
 
