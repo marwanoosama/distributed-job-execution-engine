@@ -27,6 +27,7 @@ public class JobDbContext(DbContextOptions<JobDbContext> options) : DbContext(op
             entity.HasIndex(j => j.IdempotencyKey).IsUnique();
             entity.HasIndex(j => new { j.Status, j.RunAt });
             entity.HasIndex(j => j.Type);
+            entity.HasIndex(j => j.CreatedAt);
         });
 
         modelBuilder.Entity<Worker>(entity =>

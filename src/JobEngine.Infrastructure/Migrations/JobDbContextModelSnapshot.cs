@@ -22,7 +22,7 @@ namespace JobEngine.Infrastructure.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
-            modelBuilder.Entity("JobEngine.Domain.Job", b =>
+            modelBuilder.Entity("JobEngine.Domain.models.Job", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -90,6 +90,9 @@ namespace JobEngine.Infrastructure.Migrations
                     b.HasKey("Id")
                         .HasName("pk_jobs");
 
+                    b.HasIndex("CreatedAt")
+                        .HasDatabaseName("ix_jobs_created_at");
+
                     b.HasIndex("IdempotencyKey")
                         .IsUnique()
                         .HasDatabaseName("ix_jobs_idempotency_key");
@@ -103,7 +106,7 @@ namespace JobEngine.Infrastructure.Migrations
                     b.ToTable("jobs", (string)null);
                 });
 
-            modelBuilder.Entity("JobEngine.Domain.JobAttempt", b =>
+            modelBuilder.Entity("JobEngine.Domain.models.JobAttempt", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -153,7 +156,7 @@ namespace JobEngine.Infrastructure.Migrations
                     b.ToTable("job_attempts", (string)null);
                 });
 
-            modelBuilder.Entity("JobEngine.Domain.Worker", b =>
+            modelBuilder.Entity("JobEngine.Domain.models.Worker", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -193,16 +196,16 @@ namespace JobEngine.Infrastructure.Migrations
                     b.ToTable("workers", (string)null);
                 });
 
-            modelBuilder.Entity("JobEngine.Domain.JobAttempt", b =>
+            modelBuilder.Entity("JobEngine.Domain.models.JobAttempt", b =>
                 {
-                    b.HasOne("JobEngine.Domain.Job", "Job")
+                    b.HasOne("JobEngine.Domain.models.Job", "Job")
                         .WithMany()
                         .HasForeignKey("JobId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_job_attempts_jobs_job_id");
 
-                    b.HasOne("JobEngine.Domain.Worker", "Worker")
+                    b.HasOne("JobEngine.Domain.models.Worker", "Worker")
                         .WithMany()
                         .HasForeignKey("WorkerId")
                         .HasConstraintName("fk_job_attempts_workers_worker_id");
